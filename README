@@ -1,11 +1,7 @@
-This README file contains information on the contents of the meta-efficios layer.
-
-Please see the corresponding sections below for details.
-
 Dependencies
 ============
 
-Checkout the branch corresponding to the base poky version (hardknott).
+Checkout the branch corresponding to the feature you are interested in.
 
 Patches
 =======
