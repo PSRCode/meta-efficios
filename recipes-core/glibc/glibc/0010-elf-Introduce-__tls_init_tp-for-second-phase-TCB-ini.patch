@@ -1,0 +1,192 @@
+From 6d8c4af0f390ce15960d0704bf1b94cbcd26eafc Mon Sep 17 00:00:00 2001
+From: Florian Weimer <fweimer@redhat.com>
+Date: Wed, 21 Apr 2021 19:49:51 +0200
+Subject: [PATCH] elf: Introduce __tls_init_tp for second-phase TCB
+ initialization
+
+TLS_INIT_TP is processor-specific, so it is not a good place to
+put thread library initialization code (it would have to be repeated
+for all CPUs).  Introduce __tls_init_tp as a separate function,
+to be called immediately after TLS_INIT_TP.  Move the existing
+stack list setup code for NPTL to this function.
+
+Reviewed-by: Adhemerval Zanella  <adhemerval.zanella@linaro.org>
+Signed-off-by: Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+---
+ csu/libc-tls.c                |  8 +-------
+ elf/Makefile                  |  2 +-
+ elf/dl-tls_init_tp.c          | 24 ++++++++++++++++++++++++
+ elf/rtld.c                    | 14 ++------------
+ sysdeps/generic/ldsodefs.h    |  5 +++++
+ sysdeps/nptl/dl-tls_init_tp.c | 30 ++++++++++++++++++++++++++++++
+ 6 files changed, 63 insertions(+), 20 deletions(-)
+ create mode 100644 elf/dl-tls_init_tp.c
+ create mode 100644 sysdeps/nptl/dl-tls_init_tp.c
+
+diff --git a/csu/libc-tls.c b/csu/libc-tls.c
+index f3a6a6a075..22f8e4838d 100644
+--- a/csu/libc-tls.c
++++ b/csu/libc-tls.c
+@@ -24,7 +24,6 @@
+ #include <stdio.h>
+ #include <sys/param.h>
+ #include <array_length.h>
+-#include <list.h>
+ 
+ #ifdef SHARED
+  #error makefile bug, this file is for static only
+@@ -193,12 +192,7 @@ __libc_setup_tls (void)
+ #endif
+   if (__builtin_expect (lossage != NULL, 0))
+     _startup_fatal (lossage);
+-
+-#if THREAD_GSCOPE_IN_TCB
+-  INIT_LIST_HEAD (&_dl_stack_used);
+-  INIT_LIST_HEAD (&_dl_stack_user);
+-  list_add (&THREAD_SELF->list, &_dl_stack_user);
+-#endif
++  __tls_init_tp ();
+ 
+   /* Update the executable's link map with enough information to make
+      the TLS routines happy.  */
+diff --git a/elf/Makefile b/elf/Makefile
+index 4fc3bd8239..21900123a5 100644
+--- a/elf/Makefile
++++ b/elf/Makefile
+@@ -35,7 +35,7 @@ dl-routines	= $(addprefix dl-,load lookup object reloc deps \
+ 				  execstack open close trampoline \
+ 				  exception sort-maps lookup-direct \
+ 				  call-libc-early-init write \
+-				  thread_gscope_wait)
++				  thread_gscope_wait tls_init_tp)
+ ifeq (yes,$(use-ldconfig))
+ dl-routines += dl-cache
+ endif
+diff --git a/elf/dl-tls_init_tp.c b/elf/dl-tls_init_tp.c
+new file mode 100644
+index 0000000000..728cd84c00
+--- /dev/null
++++ b/elf/dl-tls_init_tp.c
+@@ -0,0 +1,24 @@
++/* Completion of TCB initialization after TLS_INIT_TP.  Generic version.
++   Copyright (C) 2021 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <ldsodefs.h>
++
++void
++__tls_init_tp (void)
++{
++}
+diff --git a/elf/rtld.c b/elf/rtld.c
+index 489e58c551..e5dd8c3626 100644
+--- a/elf/rtld.c
++++ b/elf/rtld.c
+@@ -48,7 +48,6 @@
+ #include <array_length.h>
+ #include <libc-early-init.h>
+ #include <dl-main.h>
+-#include <list.h>
+ #include <gnu/lib-names.h>
+ #include <dl-tunables.h>
+ 
+@@ -804,9 +803,7 @@ cannot allocate TLS data structures for initial thread\n");
+   const char *lossage = TLS_INIT_TP (tcbp);
+   if (__glibc_unlikely (lossage != NULL))
+     _dl_fatal_printf ("cannot set up thread-local storage: %s\n", lossage);
+-#if THREAD_GSCOPE_IN_TCB
+-  list_add (&THREAD_SELF->list, &GL (dl_stack_user));
+-#endif
++  __tls_init_tp ();
+   tls_init_tp_called = true;
+ 
+   return tcbp;
+@@ -1147,11 +1144,6 @@ dl_main (const ElfW(Phdr) *phdr,
+   GL(dl_rtld_unlock_recursive) = rtld_lock_default_unlock_recursive;
+ #endif
+ 
+-#if THREAD_GSCOPE_IN_TCB
+-  INIT_LIST_HEAD (&GL (dl_stack_used));
+-  INIT_LIST_HEAD (&GL (dl_stack_user));
+-#endif
+-
+   /* The explicit initialization here is cheaper than processing the reloc
+      in the _rtld_local definition's initializer.  */
+   GL(dl_make_stack_executable_hook) = &_dl_make_stack_executable;
+@@ -2451,9 +2443,7 @@ dl_main (const ElfW(Phdr) *phdr,
+       if (__glibc_unlikely (lossage != NULL))
+ 	_dl_fatal_printf ("cannot set up thread-local storage: %s\n",
+ 			  lossage);
+-#if THREAD_GSCOPE_IN_TCB
+-      list_add (&THREAD_SELF->list, &GL (dl_stack_user));
+-#endif
++      __tls_init_tp ();
+     }
+ 
+   /* Make sure no new search directories have been added.  */
+diff --git a/sysdeps/generic/ldsodefs.h b/sysdeps/generic/ldsodefs.h
+index d552a7886b..93d3483bb3 100644
+--- a/sysdeps/generic/ldsodefs.h
++++ b/sysdeps/generic/ldsodefs.h
+@@ -1151,6 +1151,11 @@ extern void _dl_determine_tlsoffset (void) attribute_hidden;
+    number of audit modules are loaded.  */
+ void _dl_tls_static_surplus_init (size_t naudit) attribute_hidden;
+ 
++/* This function is called after processor-specific initialization of
++   the TCB and thread pointer via TLS_INIT_TP, to complete very early
++   initialization of the thread library.  */
++void __tls_init_tp (void) attribute_hidden;
++
+ #ifndef SHARED
+ /* Set up the TCB for statically linked applications.  This is called
+    early during startup because we always use TLS (for errno and the
+diff --git a/sysdeps/nptl/dl-tls_init_tp.c b/sysdeps/nptl/dl-tls_init_tp.c
+new file mode 100644
+index 0000000000..8983808233
+--- /dev/null
++++ b/sysdeps/nptl/dl-tls_init_tp.c
+@@ -0,0 +1,30 @@
++/* Completion of TCB initialization after TLS_INIT_TP.  NPTL version.
++   Copyright (C) 2020-2021 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <ldsodefs.h>
++#include <list.h>
++#include <tls.h>
++
++void
++__tls_init_tp (void)
++{
++  /* Set up thread stack list management.  */
++  INIT_LIST_HEAD (&GL (dl_stack_used));
++  INIT_LIST_HEAD (&GL (dl_stack_user));
++  list_add (&THREAD_SELF->list, &GL (dl_stack_user));
++}

@@ -1,0 +1,28 @@
+From def177e42a303de7a89e7c0ae456385c4396ce07 Mon Sep 17 00:00:00 2001
+From: Florian Weimer <fweimer@redhat.com>
+Date: Thu, 22 Apr 2021 09:56:37 +0200
+Subject: [PATCH] nptl: __nptl_set_robust_list_avail must be nocommon
+
+This is required for GCC versions before 10 which default to -fcommon.
+
+Fixes commit 442e8a40da9dfa24aeebf4f1a163f0a58b12cf7e ("nptl: Move part
+of TCB initialization from libpthread to __tls_init_tp").
+
+Signed-off-by: Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+---
+ sysdeps/nptl/dl-tls_init_tp.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sysdeps/nptl/dl-tls_init_tp.c b/sysdeps/nptl/dl-tls_init_tp.c
+index c5172b7613..05d2b6cfcc 100644
+--- a/sysdeps/nptl/dl-tls_init_tp.c
++++ b/sysdeps/nptl/dl-tls_init_tp.c
+@@ -23,7 +23,7 @@
+ #include <tls.h>
+ 
+ #ifndef __ASSUME_SET_ROBUST_LIST
+-bool __nptl_set_robust_list_avail;
++bool __nptl_set_robust_list_avail __attribute__ ((nocommon));
+ rtld_hidden_data_def (__nptl_set_robust_list_avail)
+ #endif
+ 

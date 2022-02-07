@@ -1,0 +1,41 @@
+From c30582ebeea0dc0cffa27692f134dc99aa1588e8 Mon Sep 17 00:00:00 2001
+From: Florian Weimer <fweimer@redhat.com>
+Date: Thu, 9 Dec 2021 09:49:32 +0100
+Subject: [PATCH] nptl: rseq failure after registration on main thread is fatal
+
+This simplifies the application programming model.
+
+Browser sandboxes have already been fixed:
+
+  Sandbox is incompatible with rseq registration
+  <https://bugzilla.mozilla.org/show_bug.cgi?id=1651701>
+
+  Allow rseq in the Linux sandboxes. r=gcp
+  <https://hg.mozilla.org/mozilla-central/rev/042425712eb1>
+
+  Sandbox needs to support rseq system call
+  <https://bugs.chromium.org/p/chromium/issues/detail?id=1104160>
+
+  Linux sandbox: Allow rseq(2)
+  <https://chromium.googlesource.com/chromium/src.git/+/230675d9ac8f1>
+
+Reviewed-by: Szabolcs Nagy <szabolcs.nagy@arm.com>
+Signed-off-by: Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+---
+ nptl/pthread_create.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/nptl/pthread_create.c b/nptl/pthread_create.c
+index 9c76f77591..ccb3f00b3a 100644
+--- a/nptl/pthread_create.c
++++ b/nptl/pthread_create.c
+@@ -398,7 +398,8 @@ START_THREAD_DEFN
+   /* Register rseq TLS to the kernel.  */
+   {
+     bool do_rseq = THREAD_GETMEM (pd, flags) & ATTR_FLAG_DO_RSEQ;
+-    rseq_register_current_thread (pd, do_rseq);
++    if (!rseq_register_current_thread (pd, do_rseq) && do_rseq)
++      __libc_fatal ("Fatal glibc error: rseq registration failed\n");
+   }
+ 
+ #ifndef __ASSUME_SET_ROBUST_LIST

@@ -1,0 +1,24 @@
+From 51a17602a2843c9394d083c627f4182dc8618056 Mon Sep 17 00:00:00 2001
+From: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Date: Fri, 4 Feb 2022 11:36:17 -0500
+Subject: [PATCH] Fix backport: include nptl/pthreadP.h from csu/libc-tls.c
+
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Signed-off-by: Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+---
+ csu/libc-tls.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/csu/libc-tls.c b/csu/libc-tls.c
+index f7d3850a4b..a71fa1853a 100644
+--- a/csu/libc-tls.c
++++ b/csu/libc-tls.c
+@@ -24,7 +24,7 @@
+ #include <stdio.h>
+ #include <sys/param.h>
+ #include <array_length.h>
+-#include <pthreadP.h>
++#include <nptl/pthreadP.h>
+ 
+ #ifdef SHARED
+  #error makefile bug, this file is for static only

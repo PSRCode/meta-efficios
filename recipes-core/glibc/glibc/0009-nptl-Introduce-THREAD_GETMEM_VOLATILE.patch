@@ -1,0 +1,54 @@
+From f3feff5e9e2afa0aa2bfd6026a8a1707132f27f0 Mon Sep 17 00:00:00 2001
+From: Florian Weimer <fweimer@redhat.com>
+Date: Thu, 9 Dec 2021 09:49:32 +0100
+Subject: [PATCH] nptl: Introduce THREAD_GETMEM_VOLATILE
+
+This will be needed for rseq TCB access.
+
+Reviewed-by: Szabolcs Nagy <szabolcs.nagy@arm.com>
+Signed-off-by: Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+---
+ sysdeps/i386/nptl/tcb-access.h   | 2 ++
+ sysdeps/nptl/tcb-access.h        | 2 ++
+ sysdeps/x86_64/nptl/tcb-access.h | 2 ++
+ 3 files changed, 6 insertions(+)
+
+diff --git a/sysdeps/i386/nptl/tcb-access.h b/sysdeps/i386/nptl/tcb-access.h
+index 6c6d561e39..5ddd83224b 100644
+--- a/sysdeps/i386/nptl/tcb-access.h
++++ b/sysdeps/i386/nptl/tcb-access.h
+@@ -41,6 +41,8 @@
+        }								      \
+      __value; })
+ 
++/* THREAD_GETMEM already forces a read.  */
++#define THREAD_GETMEM_VOLATILE(descr, member) THREAD_GETMEM (descr, member)
+ 
+ /* Same as THREAD_GETMEM, but the member offset can be non-constant.  */
+ #define THREAD_GETMEM_NC(descr, member, idx) \
+diff --git a/sysdeps/nptl/tcb-access.h b/sysdeps/nptl/tcb-access.h
+index b4137b8ab8..bbe20b7225 100644
+--- a/sysdeps/nptl/tcb-access.h
++++ b/sysdeps/nptl/tcb-access.h
+@@ -22,6 +22,8 @@
+ 
+ #define THREAD_GETMEM(descr, member) \
+   descr->member
++#define THREAD_GETMEM_VOLATILE(descr, member) \
++  (*(volatile __typeof (descr->member) *)&descr->member)
+ #define THREAD_GETMEM_NC(descr, member, idx) \
+   descr->member[idx]
+ #define THREAD_SETMEM(descr, member, value) \
+diff --git a/sysdeps/x86_64/nptl/tcb-access.h b/sysdeps/x86_64/nptl/tcb-access.h
+index 18848a729d..e4d2d07a9b 100644
+--- a/sysdeps/x86_64/nptl/tcb-access.h
++++ b/sysdeps/x86_64/nptl/tcb-access.h
+@@ -39,6 +39,8 @@
+        }								      \
+      __value; })
+ 
++/* THREAD_GETMEM already forces a read.  */
++#define THREAD_GETMEM_VOLATILE(descr, member) THREAD_GETMEM (descr, member)
+ 
+ /* Same as THREAD_GETMEM, but the member offset can be non-constant.  */
+ # define THREAD_GETMEM_NC(descr, member, idx) \

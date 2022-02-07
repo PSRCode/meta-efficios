@@ -1,0 +1,214 @@
+From 6a0d6a1a3626714eec7adc5a3aa18c7ad443a44c Mon Sep 17 00:00:00 2001
+From: Joseph Myers <joseph@codesourcery.com>
+Date: Mon, 9 Aug 2021 16:51:38 +0000
+Subject: [PATCH] Add PTRACE_GET_RSEQ_CONFIGURATION from Linux 5.13 to
+ sys/ptrace.h
+
+Linux 5.13 adds a PTRACE_GET_RSEQ_CONFIGURATION constant, with an
+associated ptrace_rseq_configuration structure.
+
+Add this constant to the various sys/ptrace.h headers in glibc, with
+the structure in bits/ptrace-shared.h (named struct
+__ptrace_rseq_configuration in glibc, as with other such structures).
+
+Tested for x86_64, and with build-many-glibcs.py.
+
+Signed-off-by: Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+---
+ sysdeps/unix/sysv/linux/aarch64/sys/ptrace.h |  7 ++++++-
+ sysdeps/unix/sysv/linux/arm/sys/ptrace.h     |  6 +++++-
+ sysdeps/unix/sysv/linux/bits/ptrace-shared.h | 10 ++++++++++
+ sysdeps/unix/sysv/linux/ia64/sys/ptrace.h    |  6 +++++-
+ sysdeps/unix/sysv/linux/powerpc/sys/ptrace.h |  7 ++++++-
+ sysdeps/unix/sysv/linux/s390/sys/ptrace.h    |  5 +++++
+ sysdeps/unix/sysv/linux/sparc/sys/ptrace.h   |  6 +++++-
+ sysdeps/unix/sysv/linux/sys/ptrace.h         |  6 +++++-
+ sysdeps/unix/sysv/linux/x86/sys/ptrace.h     |  6 +++++-
+ 9 files changed, 52 insertions(+), 7 deletions(-)
+
+diff --git a/sysdeps/unix/sysv/linux/aarch64/sys/ptrace.h b/sysdeps/unix/sysv/linux/aarch64/sys/ptrace.h
+index c1c206d5b0..490033da45 100644
+--- a/sysdeps/unix/sysv/linux/aarch64/sys/ptrace.h
++++ b/sysdeps/unix/sysv/linux/aarch64/sys/ptrace.h
+@@ -58,6 +58,7 @@ __BEGIN_DECLS
+ #undef PTRACE_SECCOMP_GET_FILTER
+ #undef PTRACE_SECCOMP_GET_METADATA
+ #undef PTRACE_GET_SYSCALL_INFO
++#undef PTRACE_GET_RSEQ_CONFIGURATION
+ 
+ /* Type of the REQUEST argument to `ptrace.'  */
+ enum __ptrace_request
+@@ -174,8 +175,12 @@ enum __ptrace_request
+ #define PTRACE_SECCOMP_GET_METADATA PTRACE_SECCOMP_GET_METADATA
+ 
+   /* Get information about system call.  */
+-  PTRACE_GET_SYSCALL_INFO = 0x420e
++  PTRACE_GET_SYSCALL_INFO = 0x420e,
+ #define PTRACE_GET_SYSCALL_INFO PTRACE_GET_SYSCALL_INFO
++
++  /* Get rseq configuration information.  */
++  PTRACE_GET_RSEQ_CONFIGURATION = 0x420f
++#define PTRACE_GET_RSEQ_CONFIGURATION PTRACE_GET_RSEQ_CONFIGURATION
+ };
+ 
+ 
+diff --git a/sysdeps/unix/sysv/linux/arm/sys/ptrace.h b/sysdeps/unix/sysv/linux/arm/sys/ptrace.h
+index cdb1f159a7..2e38436648 100644
+--- a/sysdeps/unix/sysv/linux/arm/sys/ptrace.h
++++ b/sysdeps/unix/sysv/linux/arm/sys/ptrace.h
+@@ -200,8 +200,12 @@ enum __ptrace_request
+ #define PTRACE_SECCOMP_GET_METADATA PTRACE_SECCOMP_GET_METADATA
+ 
+   /* Get information about system call.  */
+-  PTRACE_GET_SYSCALL_INFO = 0x420e
++  PTRACE_GET_SYSCALL_INFO = 0x420e,
+ #define PTRACE_GET_SYSCALL_INFO PTRACE_GET_SYSCALL_INFO
++
++  /* Get rseq configuration information.  */
++  PTRACE_GET_RSEQ_CONFIGURATION = 0x420f
++#define PTRACE_GET_RSEQ_CONFIGURATION PTRACE_GET_RSEQ_CONFIGURATION
+ };
+ 
+ 
+diff --git a/sysdeps/unix/sysv/linux/bits/ptrace-shared.h b/sysdeps/unix/sysv/linux/bits/ptrace-shared.h
+index 7d40634da5..7e95ca7082 100644
+--- a/sysdeps/unix/sysv/linux/bits/ptrace-shared.h
++++ b/sysdeps/unix/sysv/linux/bits/ptrace-shared.h
+@@ -120,6 +120,16 @@ struct __ptrace_syscall_info
+   };
+ };
+ 
++/* Results of PTRACE_GET_RSEQ_CONFIGURATION.  */
++struct __ptrace_rseq_configuration
++{
++  __uint64_t rseq_abi_pointer;
++  __uint32_t rseq_abi_size;
++  __uint32_t signature;
++  __uint32_t flags;
++  __uint32_t pad;
++};
++
+ /* Perform process tracing functions.  REQUEST is one of the values
+    above, and determines the action to be taken.
+    For all requests except PTRACE_TRACEME, PID specifies the process to be
+diff --git a/sysdeps/unix/sysv/linux/ia64/sys/ptrace.h b/sysdeps/unix/sysv/linux/ia64/sys/ptrace.h
+index bea975bb9e..536a0cafbd 100644
+--- a/sysdeps/unix/sysv/linux/ia64/sys/ptrace.h
++++ b/sysdeps/unix/sysv/linux/ia64/sys/ptrace.h
+@@ -153,8 +153,12 @@ enum __ptrace_request
+ #define PTRACE_SECCOMP_GET_METADATA PTRACE_SECCOMP_GET_METADATA
+ 
+   /* Get information about system call.  */
+-  PTRACE_GET_SYSCALL_INFO = 0x420e
++  PTRACE_GET_SYSCALL_INFO = 0x420e,
+ #define PTRACE_GET_SYSCALL_INFO PTRACE_GET_SYSCALL_INFO
++
++  /* Get rseq configuration information.  */
++  PTRACE_GET_RSEQ_CONFIGURATION = 0x420f
++#define PTRACE_GET_RSEQ_CONFIGURATION PTRACE_GET_RSEQ_CONFIGURATION
+ };
+ 
+ 
+diff --git a/sysdeps/unix/sysv/linux/powerpc/sys/ptrace.h b/sysdeps/unix/sysv/linux/powerpc/sys/ptrace.h
+index 00730cf5d3..ca0c6f6d59 100644
+--- a/sysdeps/unix/sysv/linux/powerpc/sys/ptrace.h
++++ b/sysdeps/unix/sysv/linux/powerpc/sys/ptrace.h
+@@ -36,6 +36,7 @@ __BEGIN_DECLS
+ # undef PTRACE_GETREGS
+ # undef PTRACE_GETREGS64
+ # undef PTRACE_GETREGSET
++# undef PTRACE_GET_RSEQ_CONFIGURATION
+ # undef PTRACE_GETSIGINFO
+ # undef PTRACE_GETSIGMASK
+ # undef PTRACE_GET_SYSCALL_INFO
+@@ -250,8 +251,12 @@ enum __ptrace_request
+ #define PTRACE_SECCOMP_GET_METADATA PTRACE_SECCOMP_GET_METADATA
+ 
+   /* Get information about system call.  */
+-  PTRACE_GET_SYSCALL_INFO = 0x420e
++  PTRACE_GET_SYSCALL_INFO = 0x420e,
+ #define PTRACE_GET_SYSCALL_INFO PTRACE_GET_SYSCALL_INFO
++
++  /* Get rseq configuration information.  */
++  PTRACE_GET_RSEQ_CONFIGURATION = 0x420f
++#define PTRACE_GET_RSEQ_CONFIGURATION PTRACE_GET_RSEQ_CONFIGURATION
+ };
+ 
+ 
+diff --git a/sysdeps/unix/sysv/linux/s390/sys/ptrace.h b/sysdeps/unix/sysv/linux/s390/sys/ptrace.h
+index 85efbae842..35212a3236 100644
+--- a/sysdeps/unix/sysv/linux/s390/sys/ptrace.h
++++ b/sysdeps/unix/sysv/linux/s390/sys/ptrace.h
+@@ -84,6 +84,7 @@ __BEGIN_DECLS
+ # undef PTRACE_SYSCALL_INFO_ENTRY
+ # undef PTRACE_SYSCALL_INFO_EXIT
+ # undef PTRACE_SYSCALL_INFO_SECCOMP
++# undef PTRACE_GET_RSEQ_CONFIGURATION
+ #endif
+ /* Type of the REQUEST argument to `ptrace.'  */
+ enum __ptrace_request
+@@ -207,6 +208,10 @@ enum __ptrace_request
+   PTRACE_GET_SYSCALL_INFO = 0x420e,
+ #define PTRACE_GET_SYSCALL_INFO PTRACE_GET_SYSCALL_INFO
+ 
++  /* Get rseq configuration information.  */
++  PTRACE_GET_RSEQ_CONFIGURATION = 0x420f,
++#define PTRACE_GET_RSEQ_CONFIGURATION PTRACE_GET_RSEQ_CONFIGURATION
++
+   PTRACE_PEEKUSR_AREA = 0x5000,
+ #define PTRACE_PEEKUSR_AREA PTRACE_PEEKUSR_AREA
+ 
+diff --git a/sysdeps/unix/sysv/linux/sparc/sys/ptrace.h b/sysdeps/unix/sysv/linux/sparc/sys/ptrace.h
+index 3f61500284..773b437924 100644
+--- a/sysdeps/unix/sysv/linux/sparc/sys/ptrace.h
++++ b/sysdeps/unix/sysv/linux/sparc/sys/ptrace.h
+@@ -221,8 +221,12 @@ enum __ptrace_request
+ #define PTRACE_SECCOMP_GET_METADATA PTRACE_SECCOMP_GET_METADATA
+ 
+   /* Get information about system call.  */
+-  PTRACE_GET_SYSCALL_INFO = 0x420e
++  PTRACE_GET_SYSCALL_INFO = 0x420e,
+ #define PTRACE_GET_SYSCALL_INFO PTRACE_GET_SYSCALL_INFO
++
++  /* Get rseq configuration information.  */
++  PTRACE_GET_RSEQ_CONFIGURATION = 0x420f
++#define PTRACE_GET_RSEQ_CONFIGURATION PTRACE_GET_RSEQ_CONFIGURATION
+ };
+ 
+ 
+diff --git a/sysdeps/unix/sysv/linux/sys/ptrace.h b/sysdeps/unix/sysv/linux/sys/ptrace.h
+index dc76e97ea7..404fc3ddb7 100644
+--- a/sysdeps/unix/sysv/linux/sys/ptrace.h
++++ b/sysdeps/unix/sysv/linux/sys/ptrace.h
+@@ -170,8 +170,12 @@ enum __ptrace_request
+ #define PTRACE_SECCOMP_GET_METADATA PTRACE_SECCOMP_GET_METADATA
+ 
+   /* Get information about system call.  */
+-  PTRACE_GET_SYSCALL_INFO = 0x420e
++  PTRACE_GET_SYSCALL_INFO = 0x420e,
+ #define PTRACE_GET_SYSCALL_INFO PTRACE_GET_SYSCALL_INFO
++
++  /* Get rseq configuration information.  */
++  PTRACE_GET_RSEQ_CONFIGURATION = 0x420f
++#define PTRACE_GET_RSEQ_CONFIGURATION PTRACE_GET_RSEQ_CONFIGURATION
+ };
+ 
+ 
+diff --git a/sysdeps/unix/sysv/linux/x86/sys/ptrace.h b/sysdeps/unix/sysv/linux/x86/sys/ptrace.h
+index 8501cc22ed..7202a09eef 100644
+--- a/sysdeps/unix/sysv/linux/x86/sys/ptrace.h
++++ b/sysdeps/unix/sysv/linux/x86/sys/ptrace.h
+@@ -190,8 +190,12 @@ enum __ptrace_request
+ #define PTRACE_SECCOMP_GET_METADATA PTRACE_SECCOMP_GET_METADATA
+ 
+   /* Get information about system call.  */
+-  PTRACE_GET_SYSCALL_INFO = 0x420e
++  PTRACE_GET_SYSCALL_INFO = 0x420e,
+ #define PTRACE_GET_SYSCALL_INFO PTRACE_GET_SYSCALL_INFO
++
++  /* Get rseq configuration information.  */
++  PTRACE_GET_RSEQ_CONFIGURATION = 0x420f
++#define PTRACE_GET_RSEQ_CONFIGURATION PTRACE_GET_RSEQ_CONFIGURATION
+ };
+ 
+ 

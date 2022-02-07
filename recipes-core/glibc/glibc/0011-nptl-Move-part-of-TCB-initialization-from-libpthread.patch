@@ -1,0 +1,292 @@
+From 1d390419083f975aae07d227a8aba27796ff956e Mon Sep 17 00:00:00 2001
+From: Florian Weimer <fweimer@redhat.com>
+Date: Wed, 21 Apr 2021 19:49:51 +0200
+Subject: [PATCH] nptl: Move part of TCB initialization from libpthread to
+ __tls_init_tp
+
+This initalization should only happen once for the main thread's TCB.
+At present, auditors can achieve this by not linking against
+libpthread.  If libpthread becomes part of libc, doing this
+initialization in libc would happen for every audit namespace,
+or too late (if it happens from the main libc only).  That's why
+moving this code into ld.so seems the right thing to do, right after
+the TCB initialization.
+
+For !__ASSUME_SET_ROBUST_LIST ports, this also moves the symbol
+__set_robust_list_avail into ld.so, as __nptl_set_robust_list_avail.
+It also turned into a proper boolean flag.
+
+Inline the __pthread_initialize_pids function because it seems no
+longer useful as a separate function.
+
+Reviewed-by: Adhemerval Zanella  <adhemerval.zanella@linaro.org>
+Signed-off-by: Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+---
+ nptl/Versions                          |  6 +++++
+ nptl/nptl-init.c                       | 36 ++-----------------------
+ nptl/pthread-pids.h                    | 29 --------------------
+ nptl/pthreadP.h                        |  6 +++--
+ nptl/pthread_create.c                  |  4 +--
+ nptl/pthread_mutex_init.c              |  2 +-
+ sysdeps/nptl/dl-tls_init_tp.c          | 37 ++++++++++++++++++++++++++
+ sysdeps/unix/sysv/linux/pthread-pids.h | 29 --------------------
+ 8 files changed, 52 insertions(+), 97 deletions(-)
+ delete mode 100644 nptl/pthread-pids.h
+ delete mode 100644 sysdeps/unix/sysv/linux/pthread-pids.h
+
+diff --git a/nptl/Versions b/nptl/Versions
+index 02650fe91c..6d1beb0966 100644
+--- a/nptl/Versions
++++ b/nptl/Versions
+@@ -307,3 +307,9 @@ libpthread {
+     __libpthread_freeres;
+   }
+ }
++
++ld {
++  GLIBC_PRIVATE {
++     __nptl_set_robust_list_avail;
++  }
++}
+\ No newline at end of file
+diff --git a/nptl/nptl-init.c b/nptl/nptl-init.c
+index 865ee8db29..987424bc83 100644
+--- a/nptl/nptl-init.c
++++ b/nptl/nptl-init.c
+@@ -36,7 +36,6 @@
+ #include <futex-internal.h>
+ #include <kernel-features.h>
+ #include <libc-pointer-arith.h>
+-#include <pthread-pids.h>
+ #include <pthread_mutex_conf.h>
+ 
+ #ifndef TLS_MULTIPLE_THREADS_IN_TCB
+@@ -48,15 +47,6 @@ int *__libc_multiple_threads_ptr attribute_hidden;
+ size_t __static_tls_size;
+ size_t __static_tls_align_m1;
+ 
+-#ifndef __ASSUME_SET_ROBUST_LIST
+-/* Negative if we do not have the system call and we can use it.  */
+-int __set_robust_list_avail;
+-# define set_robust_list_not_avail() \
+-  __set_robust_list_avail = -1
+-#else
+-# define set_robust_list_not_avail() do { } while (0)
+-#endif
+-
+ /* Version of the library, used in libthread_db to detect mismatches.  */
+ static const char nptl_version[] __attribute_used__ = VERSION;
+ 
+@@ -225,31 +215,9 @@ static bool __nptl_initial_report_events __attribute_used__;
+ void
+ __pthread_initialize_minimal_internal (void)
+ {
+-  /* Minimal initialization of the thread descriptor.  */
++  /* Partial initialization of the TCB already happened in TLS_INIT_TP
++     and __tls_init_tp.  */
+   struct pthread *pd = THREAD_SELF;
+-  __pthread_initialize_pids (pd);
+-  THREAD_SETMEM (pd, specific[0], &pd->specific_1stblock[0]);
+-  THREAD_SETMEM (pd, user_stack, true);
+-
+-  /* Initialize the robust mutex data.  */
+-  {
+-#if __PTHREAD_MUTEX_HAVE_PREV
+-    pd->robust_prev = &pd->robust_head;
+-#endif
+-    pd->robust_head.list = &pd->robust_head;
+-    pd->robust_head.futex_offset = (offsetof (pthread_mutex_t, __data.__lock)
+-				    - offsetof (pthread_mutex_t,
+-						__data.__list.__next));
+-    int res = INTERNAL_SYSCALL_CALL (set_robust_list, &pd->robust_head,
+-				     sizeof (struct robust_list_head));
+-    if (INTERNAL_SYSCALL_ERROR_P (res))
+-      set_robust_list_not_avail ();
+-  }
+-
+-  /* Set initial thread's stack block from 0 up to __libc_stack_end.
+-     It will be bigger than it actually is, but for unwind.c/pt-longjmp.c
+-     purposes this is good enough.  */
+-  THREAD_SETMEM (pd, stackblock_size, (size_t) __libc_stack_end);
+ 
+   /* Before initializing GL (dl_stack_user), the debugger could not
+      find us and had to set __nptl_initial_report_events.  Propagate
+diff --git a/nptl/pthread-pids.h b/nptl/pthread-pids.h
+deleted file mode 100644
+index 1a0e9ade41..0000000000
+--- a/nptl/pthread-pids.h
++++ /dev/null
+@@ -1,29 +0,0 @@
+-/* Initialize pid and tid fields of struct pthread.  Stub version.
+-   Copyright (C) 2015-2021 Free Software Foundation, Inc.
+-   This file is part of the GNU C Library.
+-
+-   The GNU C Library is free software; you can redistribute it and/or
+-   modify it under the terms of the GNU Lesser General Public
+-   License as published by the Free Software Foundation; either
+-   version 2.1 of the License, or (at your option) any later version.
+-
+-   The GNU C Library is distributed in the hope that it will be useful,
+-   but WITHOUT ANY WARRANTY; without even the implied warranty of
+-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-   Lesser General Public License for more details.
+-
+-   You should have received a copy of the GNU Lesser General Public
+-   License along with the GNU C Library; if not, see
+-   <https://www.gnu.org/licenses/>.  */
+-
+-#include <pthreadP.h>
+-
+-/* Initialize PD->pid and PD->tid for the initial thread.  If there is
+-   setup required to arrange that __exit_thread causes PD->tid to be
+-   cleared and futex-woken, then this function should do that as well.  */
+-static inline void
+-__pthread_initialize_pids (struct pthread *pd)
+-{
+-#error "sysdeps pthread-pids.h file required"
+-  pd->pid = pd->tid = -1;
+-}
+diff --git a/nptl/pthreadP.h b/nptl/pthreadP.h
+index 79be1bc70f..f1b0de0f0f 100644
+--- a/nptl/pthreadP.h
++++ b/nptl/pthreadP.h
+@@ -223,8 +223,10 @@ hidden_proto (__pthread_keys)
+ extern unsigned int __nptl_nthreads attribute_hidden;
+ 
+ #ifndef __ASSUME_SET_ROBUST_LIST
+-/* Negative if we do not have the system call and we can use it.  */
+-extern int __set_robust_list_avail attribute_hidden;
++/* True if the set_robust_list system call works.  Initialized in
++   __tls_init_tp.  */
++extern bool __nptl_set_robust_list_avail;
++rtld_hidden_proto (__nptl_set_robust_list_avail)
+ #endif
+ 
+ /* Thread Priority Protection.  */
+diff --git a/nptl/pthread_create.c b/nptl/pthread_create.c
+index 337a7dcba6..580608cc78 100644
+--- a/nptl/pthread_create.c
++++ b/nptl/pthread_create.c
+@@ -395,7 +395,7 @@ START_THREAD_DEFN
+   __ctype_init ();
+ 
+ #ifndef __ASSUME_SET_ROBUST_LIST
+-  if (__set_robust_list_avail >= 0)
++  if (__nptl_set_robust_list_avail)
+ #endif
+     {
+       /* This call should never fail because the initial call in init.c
+@@ -545,7 +545,7 @@ START_THREAD_DEFN
+   /* We let the kernel do the notification if it is able to do so.
+      If we have to do it here there for sure are no PI mutexes involved
+      since the kernel support for them is even more recent.  */
+-  if (__set_robust_list_avail < 0
++  if (!__nptl_set_robust_list_avail
+       && __builtin_expect (robust != (void *) &pd->robust_head, 0))
+     {
+       do
+diff --git a/nptl/pthread_mutex_init.c b/nptl/pthread_mutex_init.c
+index 233cebc504..f5c3a4b464 100644
+--- a/nptl/pthread_mutex_init.c
++++ b/nptl/pthread_mutex_init.c
+@@ -95,7 +95,7 @@ __pthread_mutex_init (pthread_mutex_t *mutex,
+     {
+ #ifndef __ASSUME_SET_ROBUST_LIST
+       if ((imutexattr->mutexkind & PTHREAD_MUTEXATTR_FLAG_PSHARED) != 0
+-	  && __set_robust_list_avail < 0)
++	  && !__nptl_set_robust_list_avail)
+ 	return ENOTSUP;
+ #endif
+ 
+diff --git a/sysdeps/nptl/dl-tls_init_tp.c b/sysdeps/nptl/dl-tls_init_tp.c
+index 8983808233..c5172b7613 100644
+--- a/sysdeps/nptl/dl-tls_init_tp.c
++++ b/sysdeps/nptl/dl-tls_init_tp.c
+@@ -16,10 +16,17 @@
+    License along with the GNU C Library; if not, see
+    <https://www.gnu.org/licenses/>.  */
+ 
++#include <kernel-features.h>
+ #include <ldsodefs.h>
+ #include <list.h>
++#include <nptl/pthreadP.h>
+ #include <tls.h>
+ 
++#ifndef __ASSUME_SET_ROBUST_LIST
++bool __nptl_set_robust_list_avail;
++rtld_hidden_data_def (__nptl_set_robust_list_avail)
++#endif
++
+ void
+ __tls_init_tp (void)
+ {
+@@ -27,4 +34,34 @@ __tls_init_tp (void)
+   INIT_LIST_HEAD (&GL (dl_stack_used));
+   INIT_LIST_HEAD (&GL (dl_stack_user));
+   list_add (&THREAD_SELF->list, &GL (dl_stack_user));
++
++   /* Early initialization of the TCB.   */
++   struct pthread *pd = THREAD_SELF;
++   pd->tid = INTERNAL_SYSCALL_CALL (set_tid_address, &pd->tid);
++   THREAD_SETMEM (pd, specific[0], &pd->specific_1stblock[0]);
++   THREAD_SETMEM (pd, user_stack, true);
++
++  /* Initialize the robust mutex data.  */
++  {
++#if __PTHREAD_MUTEX_HAVE_PREV
++    pd->robust_prev = &pd->robust_head;
++#endif
++    pd->robust_head.list = &pd->robust_head;
++    pd->robust_head.futex_offset = (offsetof (pthread_mutex_t, __data.__lock)
++                                    - offsetof (pthread_mutex_t,
++                                                __data.__list.__next));
++    int res = INTERNAL_SYSCALL_CALL (set_robust_list, &pd->robust_head,
++                                     sizeof (struct robust_list_head));
++    if (!INTERNAL_SYSCALL_ERROR_P (res))
++      {
++#ifndef __ASSUME_SET_ROBUST_LIST
++        __nptl_set_robust_list_avail = true;
++#endif
++      }
++  }
++
++  /* Set initial thread's stack block from 0 up to __libc_stack_end.
++     It will be bigger than it actually is, but for unwind.c/pt-longjmp.c
++     purposes this is good enough.  */
++  THREAD_SETMEM (pd, stackblock_size, (size_t) __libc_stack_end);
+ }
+diff --git a/sysdeps/unix/sysv/linux/pthread-pids.h b/sysdeps/unix/sysv/linux/pthread-pids.h
+deleted file mode 100644
+index 10b58899f5..0000000000
+--- a/sysdeps/unix/sysv/linux/pthread-pids.h
++++ /dev/null
+@@ -1,29 +0,0 @@
+-/* Initialize pid and tid fields of struct pthread.  Linux version.
+-   Copyright (C) 2015-2021 Free Software Foundation, Inc.
+-   This file is part of the GNU C Library.
+-
+-   The GNU C Library is free software; you can redistribute it and/or
+-   modify it under the terms of the GNU Lesser General Public
+-   License as published by the Free Software Foundation; either
+-   version 2.1 of the License, or (at your option) any later version.
+-
+-   The GNU C Library is distributed in the hope that it will be useful,
+-   but WITHOUT ANY WARRANTY; without even the implied warranty of
+-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-   Lesser General Public License for more details.
+-
+-   You should have received a copy of the GNU Lesser General Public
+-   License along with the GNU C Library; if not, see
+-   <https://www.gnu.org/licenses/>.  */
+-
+-#include <pthreadP.h>
+-#include <sysdep.h>
+-
+-/* Initialize PD->pid and PD->tid for the initial thread.  If there is
+-   setup required to arrange that __exit_thread causes PD->tid to be
+-   cleared and futex-woken, then this function should do that as well.  */
+-static inline void
+-__pthread_initialize_pids (struct pthread *pd)
+-{
+-  pd->tid = INTERNAL_SYSCALL_CALL (set_tid_address, &pd->tid);
+-}

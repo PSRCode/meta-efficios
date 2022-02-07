@@ -1,0 +1,140 @@
+From 6b19748f3d81e207751b7aa8df7da261b7048f2e Mon Sep 17 00:00:00 2001
+From: "H.J. Lu" <hjl.tools@gmail.com>
+Date: Tue, 16 Mar 2021 07:41:46 -0700
+Subject: [PATCH] x86_64: Correct THREAD_SETMEM/THREAD_SETMEM_NC for movq [BZ
+ #27591]
+
+config/i386/constraints.md in GCC has
+
+(define_constraint "e"
+  "32-bit signed integer constant, or a symbolic reference known
+   to fit that range (for immediate operands in sign-extending x86-64
+   instructions)."
+  (match_operand 0 "x86_64_immediate_operand"))
+
+Since movq takes a signed 32-bit immediate or a register source operand,
+use "er", instead of "nr"/"ir", constraint for 32-bit signed integer
+constant or register on movq.
+
+Reviewed-by: Carlos O'Donell <carlos@redhat.com>
+Signed-off-by: Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+---
+ sysdeps/x86_64/Makefile           |  2 +
+ sysdeps/x86_64/nptl/tls.h         | 10 ++++-
+ sysdeps/x86_64/tst-x86-64-tls-1.c | 64 +++++++++++++++++++++++++++++++
+ 3 files changed, 74 insertions(+), 2 deletions(-)
+ create mode 100644 sysdeps/x86_64/tst-x86-64-tls-1.c
+
+diff --git a/sysdeps/x86_64/Makefile b/sysdeps/x86_64/Makefile
+index d1d7cb9d2e..06a444b6af 100644
+--- a/sysdeps/x86_64/Makefile
++++ b/sysdeps/x86_64/Makefile
+@@ -183,6 +183,8 @@ ifeq (no,$(build-hardcoded-path-in-tests))
+ tests-container += tst-glibc-hwcaps-cache
+ endif
+ 
++tests-internal += tst-x86-64-tls-1
++
+ endif # $(subdir) == elf
+ 
+ ifeq ($(subdir),csu)
+diff --git a/sysdeps/x86_64/nptl/tls.h b/sysdeps/x86_64/nptl/tls.h
+index 20f0958780..a78c4f4d01 100644
+--- a/sysdeps/x86_64/nptl/tls.h
++++ b/sysdeps/x86_64/nptl/tls.h
+@@ -271,8 +271,11 @@ _Static_assert (offsetof (tcbhead_t, __glibc_unused2) == 0x80,
+ 		       "i" (offsetof (struct pthread, member)));	      \
+      else /* 8 */							      \
+        {								      \
++	 /* Since movq takes a signed 32-bit immediate or a register source   \
++	    operand, use "er" constraint for 32-bit signed integer constant   \
++	    or register.  */						      \
+ 	 asm volatile ("movq %q0,%%fs:%P1" :				      \
+-		       : IMM_MODE ((uint64_t) cast_to_integer (value)),	      \
++		       : "er" ((uint64_t) cast_to_integer (value)),	      \
+ 			 "i" (offsetof (struct pthread, member)));	      \
+        }})
+ 
+@@ -296,8 +299,11 @@ _Static_assert (offsetof (tcbhead_t, __glibc_unused2) == 0x80,
+ 		       "r" (idx));					      \
+      else /* 8 */							      \
+        {								      \
++	 /* Since movq takes a signed 32-bit immediate or a register source   \
++	    operand, use "er" constraint for 32-bit signed integer constant   \
++	    or register.  */						      \
+ 	 asm volatile ("movq %q0,%%fs:%P1(,%q2,8)" :			      \
+-		       : IMM_MODE ((uint64_t) cast_to_integer (value)),	      \
++		       : "er" ((uint64_t) cast_to_integer (value)),	      \
+ 			 "i" (offsetof (struct pthread, member[0])),	      \
+ 			 "r" (idx));					      \
+        }})
+diff --git a/sysdeps/x86_64/tst-x86-64-tls-1.c b/sysdeps/x86_64/tst-x86-64-tls-1.c
+new file mode 100644
+index 0000000000..354635884e
+--- /dev/null
++++ b/sysdeps/x86_64/tst-x86-64-tls-1.c
+@@ -0,0 +1,64 @@
++/* Test THREAD_SETMEM and THREAD_SETMEM_NC for IMM64.
++   Copyright (C) 2021 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <tls.h>
++#include <support/check.h>
++
++static int
++do_test (void)
++{
++  unsigned long long int saved_ssp_base, ssp_base;
++  saved_ssp_base = THREAD_GETMEM (THREAD_SELF, header.ssp_base);
++
++  THREAD_SETMEM (THREAD_SELF, header.ssp_base, (1ULL << 57) - 1);
++  ssp_base = THREAD_GETMEM (THREAD_SELF, header.ssp_base);
++  if (ssp_base != ((1ULL << 57) - 1))
++    FAIL_EXIT1 ("THREAD_SETMEM: 0x%llx != 0x%llx",
++		ssp_base, (1ULL << 57) - 1);
++
++  THREAD_SETMEM (THREAD_SELF, header.ssp_base, -1ULL);
++  ssp_base = THREAD_GETMEM (THREAD_SELF, header.ssp_base);
++  if (ssp_base != -1ULL)
++    FAIL_EXIT1 ("THREAD_SETMEM: 0x%llx != 0x%llx", ssp_base, -1ULL);
++
++  THREAD_SETMEM (THREAD_SELF, header.ssp_base, saved_ssp_base);
++#ifndef __ILP32__
++  struct pthread_key_data *saved_specific, *specific;
++  saved_specific = THREAD_GETMEM_NC (THREAD_SELF, specific, 1);
++
++  uintptr_t value = (1UL << 57) - 1;
++  THREAD_SETMEM_NC (THREAD_SELF, specific, 1,
++		    (struct pthread_key_data *) value);
++  specific = THREAD_GETMEM_NC (THREAD_SELF, specific, 1);
++  if (specific != (struct pthread_key_data *) value)
++    FAIL_EXIT1 ("THREAD_GETMEM_NC: %p != %p",
++		specific, (struct pthread_key_data *) value);
++
++  THREAD_SETMEM_NC (THREAD_SELF, specific, 1,
++		    (struct pthread_key_data *) -1UL);
++  specific = THREAD_GETMEM_NC (THREAD_SELF, specific, 1);
++  if (specific != (struct pthread_key_data *) -1UL)
++    FAIL_EXIT1 ("THREAD_GETMEM_NC: %p != %p",
++		specific, (struct pthread_key_data *) -1UL);
++
++  THREAD_SETMEM_NC (THREAD_SELF, specific, 1, saved_specific);
++#endif
++  return 0;
++}
++
++#include <support/test-driver.c>
