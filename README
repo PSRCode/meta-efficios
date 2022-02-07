@@ -1,0 +1,24 @@
+This README file contains information on the contents of the meta-efficios layer.
+
+Please see the corresponding sections below for details.
+
+Dependencies
+============
+
+Checkout the branch corresponding to the base poky version (hardknott).
+
+Patches
+=======
+
+Maintainer: Jonathan Rajotte-Julien <joraj@efficios.com>
+
+Table of Contents
+=================
+
+  I. Adding the meta-efficios layer to your build
+
+
+I. Adding the meta-efficios layer to your build
+=================================================
+
+Run 'bitbake-layers add-layer meta-efficios'
